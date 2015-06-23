@@ -245,6 +245,11 @@ Receive response from server
         break;
       }
     }
+  }
+
+  if(wifi_error == WIFI_OK) {
+
+    Serial.println(F("Server response:"));
 
     // if there are incoming bytes available
     // from the server, read them and print them:
