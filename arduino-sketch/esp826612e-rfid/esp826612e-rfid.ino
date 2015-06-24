@@ -25,37 +25,15 @@
  * SPI MOSI    MOSI           13   
  * SPI MISO    MISO           12
  * SPI SCK     SCK            14
+ *             IRQ            NoConnection
  *
  */
 
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include "esp8266123-rfid.h"
 
-typedef enum {
-  RFID_OK,
-  TAG_READER_FAULTY,
-  TAG_DATA_READ_ERROR,
-  TAG_TYPE_NOT_SUPPORTED,
-} station_error_type;
-
-typedef enum {
-  WIFI_OK,
-  AP_CONNECT_FAILED,
-  STATIC_IP_FAILED,
-  DHCP_FAILED,
-  CONNECT_TO_SERVER_FAILED,
-  SERVER_RESPONSE_TIMEOUT
-} wifi_error_type;
-
-typedef enum {
-  OFF,
-  ON,
-  SLOW_BLINK,
-  FAST_BLINK,
-  SLOW_PULSE,
-  FAST_PULSE
-} LED_state;
 
 // RC522A RFID reader SPI pins
 // ESP8266-12E MOSI      GPIO13
@@ -72,26 +50,32 @@ const int FRONT_PANEL_LED_PIN = 5;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
-const char* ssid = "yourSSID";
-const char* password = "yourPassword";
+const char* ssid = "SSID";
+const char* password = "password";
 
-const char* host = "your.wesite.io";  // use DNS to resolve IP address of server
-//const char* host = "192.168.1.118"; // do not use DNS to resolve IP address of server
+const char* host = "your.website";  // use DNS to resolve IP address of server
+//const char* host = "192.168.1.100"; // do not use DNS to resolve IP address of server
 const int server_port = 80; // http=80   https=443
 
-const unsigned long wifi_connect_timeout_mS = 10000;
-const unsigned long server_response_timeout_mS = 3000;
+const unsigned long time_between_allowing_taps = 3000; // milliSeconds
+const unsigned long wifi_connect_timeout_mS = 10000; // milliSeconds
+const unsigned long server_response_timeout_mS = 3000; // milliSeconds
 
-String url = "/your/uri";
-String station_id = "LaserStationID";
-String token = "tokenHERE!";
+String url = "/your/url";
+String station_id = "a-long-unique-rfid-station-id-number"; // when using multiple stations, make this value unique to each station
+String token = "no-token";
 
-unsigned long start_time = millis();
-unsigned long waiting_time = 0;
+unsigned long tap_time = 0; // used to delay between tap-ins
+
+unsigned long start_time = 0; //used for generic timeouts
+unsigned long waiting_time = 0; // used for generic timeouts
+bool tag_reader_enabled = false;
 
 station_error_type rfid_error = RFID_OK;
 wifi_error_type wifi_error = WIFI_OK;
-LED_state indicator_LED_brightness = OFF;
+
+io_state relay_state = OFF;
+io_state front_panel_LED_state = OFF;
 
 void setup() {
   pinMode(RELAY_PIN, OUTPUT);
@@ -106,6 +90,8 @@ void setup() {
   
   wifiConnectToAP(); // attempt to connect to the wifi network
 
+  tag_reader_enabled = true;
+
   Serial.println();
   Serial.println(F("Ready and waiting for checkin taps!"));
 }
@@ -114,6 +100,16 @@ void loop() {
 
   uint32_t tagid = 0;
   byte piccType = MFRC522::PICC_TYPE_UNKNOWN;
+
+  digitalPinController(RELAY_PIN, relay_state);
+  digitalPinController(FRONT_PANEL_LED_PIN, front_panel_LED_state);
+
+  if((millis() - tap_time) >= time_between_allowing_taps) {
+    tag_reader_enabled = true;
+    front_panel_LED_state = ON;
+  } else {
+    tag_reader_enabled = false;
+  }
 
 /*****************************************************************************
 
@@ -124,6 +120,12 @@ RFID reader tap detection and verify readability of tag
   if ( !mfrc522.PICC_IsNewCardPresent()) {
     return; // No tag detected so, do nothing.
   }
+
+  if(!tag_reader_enabled) {
+    return;
+  }
+
+  tap_time = millis(); // timestamp of tap-in
 
   // tag detected, read data
   if ( !mfrc522.PICC_ReadCardSerial()) {
@@ -145,6 +147,8 @@ RFID reader tap detection and verify readability of tag
 tag ok, read Unique ID number of tag
 
 *****************************************************************************/
+
+  front_panel_LED_state = OFF;
 
   if(rfid_error == RFID_OK) {
     tagid = 0;
@@ -263,6 +267,8 @@ Receive response from server
       // String reads:
       String line = client.readStringUntil('\r');
       Serial.print(line);
+
+      // TODO parse response and activate relay.
       
     }
   }
@@ -274,11 +280,8 @@ Receive response from server
     client.stop();
   //}
 
-
   wifiErrorHandler();
   rfidErrorHandler();
-
-  delay(3000);
   
 }
 
@@ -340,6 +343,42 @@ void printWifiStatus()
   Serial.print(F("signal strength (RSSI):"));
   Serial.print(rssi);
   Serial.println(F(" dBm"));
+}
+
+void digitalPinController(int pin, io_state state)
+{
+
+  /*
+    Collection of blinking and pulsing, etc routines for controlling digital output pins
+  */
+
+  // TODO write the pwm and timing routines to makes the pulsing and blinking
+  switch(state) {
+    case OFF:
+      digitalWrite(pin, 0);
+      break;
+
+    case ON:
+      digitalWrite(pin, 1);
+      break;
+
+    case SLOW_BLINK:
+      digitalWrite(pin, 1);
+      break;
+
+    case FAST_BLINK:
+      digitalWrite(pin, 1);
+      break;
+
+    case SLOW_PULSE:
+      digitalWrite(pin, 1);
+      break;
+
+    case FAST_PULSE:
+      digitalWrite(pin, 1);
+      break;
+
+  }
 }
 
 void wifiErrorHandler(void)
