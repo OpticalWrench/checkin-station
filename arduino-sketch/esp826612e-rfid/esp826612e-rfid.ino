@@ -4,11 +4,15 @@
  * Built with the ESP8266-12-E WiFi module and
  * an RC522A breakout board.
  *
- * Requires the MFRC522 library: https://github.com/miguelbalboa/rfid
+ * Requires:
+ *   MFRC522 library: https://github.com/miguelbalboa/rfid
+ *     (from library author:) NOTE: The library file MFRC522.h has a lot of useful info. Please read it.
+ * Uses:
+ *   JSON Encode/Decode library: https://github.com/bblanchon/ArduinoJson
  *  
  * Install and configure arduino IDE: https://github.com/esp8266/Arduino
  *
- * NOTE: The library file MFRC522.h has a lot of useful info. Please read it.
+ * 
  *
  * Released into the public domain.
  *
@@ -32,8 +36,8 @@
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include "esp8266123-rfid.h"
-
+#include <ArduinoJson.h>
+#include "esp8266123-rfid.h" // put this file in this sketch's folder
 
 // RC522A RFID reader SPI pins
 // ESP8266-12E MOSI      GPIO13
@@ -50,19 +54,19 @@ const int FRONT_PANEL_LED_PIN = 5;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
-const char* ssid = "SSID";
-const char* password = "password";
+const char* ssid = "VV";
+const char* password = "LoopSoup";
 
-const char* host = "your.website";  // use DNS to resolve IP address of server
-//const char* host = "192.168.1.100"; // do not use DNS to resolve IP address of server
+const char* host = "factur.monkeywrenchmanufacturing.com";  // use DNS to resolve IP address of server
+//const char* host = "192.168.1.118"; // do not use DNS to resolve IP address of server
 const int server_port = 80; // http=80   https=443
 
 const unsigned long time_between_allowing_taps = 3000; // milliSeconds
 const unsigned long wifi_connect_timeout_mS = 10000; // milliSeconds
 const unsigned long server_response_timeout_mS = 3000; // milliSeconds
 
-String url = "/your/url";
-String station_id = "a-long-unique-rfid-station-id-number"; // when using multiple stations, make this value unique to each station
+String url = "/test/tap-in";
+String station_id = "n77JEHgJExMdZnGjNNGtanc8rvw6AsWd";
 String token = "no-token";
 
 unsigned long tap_time = 0; // used to delay between tap-ins
@@ -254,9 +258,10 @@ Receive response from server
   if(wifi_error == WIFI_OK) {
 
     Serial.println(F("Server response:"));
+    String response;
 
     // if there are incoming bytes available
-    // from the server, read them and print them:
+    // from the server, read them and process them:
     while (client.available()) {
       /*
       // char reads:
@@ -264,14 +269,51 @@ Receive response from server
       Serial.write(c);
       */    
       
+      /*
       // String reads:
       String line = client.readStringUntil('\r');
       Serial.print(line);
+      */
 
-      // TODO parse response and activate relay.
-      
+      // collect the entire server response to be parsed when server stops
+      response += client.readStringUntil('\r');
     }
-  }
+
+    String json_response = response;
+    int open_brace = -1;
+    int close_brace = -1;
+
+    open_brace = json_response.indexOf("{"); // returns index of val within the String, or -1 if not found.
+    close_brace = json_response.indexOf("}"); // returns index of val within the String, or -1 if not found.
+
+    // make sure that the data contains both open and close braces.
+    if(open_brace != -1 && close_brace != -1) {
+
+      if((close_brace + 1) <= json_response.length()) {
+        json_response = json_response.substring(open_brace, (close_brace + 1));
+      } else {
+        json_response = json_response.substring(open_brace, close_brace) + "}";
+      }
+      json_response.replace("\r", ""); // discard the carriage return characters
+      json_response.replace("\n", ""); // discard the newline characters
+
+    } else {
+      wifi_error = JSON_RECEIVE_FAILED;
+      //json_response = "error parsing server data response.";
+    }  
+
+    // checking wifi_error value again because if receiving JSon data failed then don't parse the JSON data
+    if(wifi_error == WIFI_OK) {
+      
+      Serial.print(json_response);
+
+      // verify laser cutter permission
+      if(laser_permission(json_response) == true) {
+        togglePin(RELAY_PIN, relay_state);
+      }
+    }
+
+ } 
   
   // if the server's disconnected, stop the client:
   //if (!client.connected()) {
@@ -381,6 +423,45 @@ void digitalPinController(int pin, io_state state)
   }
 }
 
+void togglePin(int pin, io_state &pin_state)
+{
+  // debugging prints
+  //Serial.println();
+  //Serial.print("pin state = ");
+  //Serial.println(pin_state);
+
+  // NOTE: only works if the IO pin is either ON or OFF!
+  // NOTE: does not alter the pin state if blinking, pulsing, etc!
+  if(pin_state == OFF) {
+    pin_state = ON;
+  } else if(pin_state == ON) {
+    pin_state = OFF;
+  }
+}
+
+bool laser_permission(String json_string)
+{
+    const int JSON_BUFFER_SIZE = 1024;
+    char char_buffer[JSON_BUFFER_SIZE];
+    StaticJsonBuffer<JSON_BUFFER_SIZE> jsonBuffer;
+    bool retval = false;
+
+    json_string.toCharArray(char_buffer, JSON_BUFFER_SIZE);
+
+    JsonObject& root = jsonBuffer.parseObject(char_buffer);
+    if (!root.success()) {
+      wifi_error = JSON_PARSE_FAILED;
+    }
+
+    // verify laser cutter permission
+    if(root["allowlaser"] == 1) {
+      //int pin, io_state &state)
+      retval = true;
+    }
+
+    return retval;
+}
+
 void wifiErrorHandler(void)
 {
   if (WiFi.status() != WL_CONNECTED) {
@@ -422,6 +503,11 @@ void wifiErrorHandler(void)
       break;
     case SERVER_RESPONSE_TIMEOUT:
       Serial.println(F("Server timeout waiting for response."));
+      wifi_error = WIFI_OK;
+      break;
+
+    case JSON_PARSE_FAILED:
+      Serial.println("parseObject() failed");
       wifi_error = WIFI_OK;
       break;
 
