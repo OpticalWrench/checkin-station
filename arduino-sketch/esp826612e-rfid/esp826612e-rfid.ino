@@ -98,10 +98,14 @@ void setup() {
   
   wifiConnectToAP(); // attempt to connect to the wifi network
 
-  tag_reader_enabled = true;
+    if(rfid_error == RFID_OK) {
+      tag_reader_enabled = true;
+      front_panel_LED_state = ON;
+    } else {
+      tag_reader_enabled = false;
+      front_panel_LED_state = OFF;
+    }
 
-  Serial.println();
-  Serial.println(F("Ready and waiting for checkin taps!"));
 }
 
 void loop() {
@@ -121,8 +125,15 @@ void loop() {
   digitalPinController(FRONT_PANEL_LED_PIN, front_panel_LED_state);
 
   if((millis() - tap_time) >= time_between_allowing_taps) {
-    tag_reader_enabled = true;
-    front_panel_LED_state = ON;
+    if(rfid_error == RFID_OK) {
+      if(tag_reader_enabled == false) {
+        Serial.println();
+        Serial.println(F("Ready and waiting for checkin taps!"));
+        tag_reader_enabled = true;
+        front_panel_LED_state = ON; // ON=ready to scan a tag
+      }
+    }
+    
   } else {
     tag_reader_enabled = false;
   }
@@ -163,8 +174,8 @@ RFID reader tap detection and verify readability of tag
 tag ok, read Unique ID number of tag
 
 *****************************************************************************/
-
   front_panel_LED_state = OFF;
+  digitalPinController(FRONT_PANEL_LED_PIN, front_panel_LED_state);// set the front panel LED off immediately.
 
   if(rfid_error == RFID_OK) {
     tagid = 0;
@@ -211,24 +222,20 @@ Send request to server
 
   if (wifi_error == WIFI_OK) {
 
+    /*
+    // Use this http request string to emulate a form submission to the server        
+        String form_data = "stationid=" + station_id + "&token=" + token;
+        int form_data_length = form_data.length();
 
+        String http_request = String("POST ") + url + " HTTP/1.1\r\n" +
+                     "Host: " + host + "\r\n" + 
+                     "Content-Type: application/x-www-form-urlencoded\r\n" +
+                     "Content-Length: " + form_data_length + "\r\n" +
+                     "Connection: close\r\n\r\n" +
+                     form_data + "\r\n";
+      */
 
-/*
-// Use this http request string to emulate a form submission to the server
-    
-    String form_data = "stationid=" + station_id + "&token=" + token;
-    int form_data_length = form_data.length();
-
-    String http_request = String("POST ") + url + " HTTP/1.1\r\n" +
-                 "Host: " + host + "\r\n" + 
-                 "Content-Type: application/x-www-form-urlencoded\r\n" +
-                 "Content-Length: " + form_data_length + "\r\n" +
-                 "Connection: close\r\n\r\n" +
-                 form_data + "\r\n";
-  */
-
-// Use this http request string to send JSON data to the server as the request
-    
+    // Use this http request string to send JSON data to the server as the request    
     String json_data = "{\"stationid\":\"" + station_id + "\",\"token\":\"" + token + "\"}";
     int json_data_length = json_data.length();
 
@@ -244,7 +251,7 @@ Send request to server
     // Send the request to the server
     Serial.print(F("Requesting URL: "));
     Serial.println(url);
-    Serial.println(F("Sending HTTP Request to Server:"));
+    Serial.print(F("Sending HTTP Request to Server... "));
     client.print(http_request);
     Serial.println(F("Finished Sending HTTP Request."));
   }
@@ -407,15 +414,15 @@ bool setRFIDAntennaGain(int new_gain)
   if(new_gain >= 0 && new_gain <= 7) {
     byte RFID_antenna_gain = (byte) new_gain << 4;
     mfrc522.PCD_SetAntennaGain(RFID_antenna_gain);
-    Serial.println();
   }
 
   byte current_gain = mfrc522.PCD_GetAntennaGain() >> 4;
   if(current_gain == new_gain) {
     retval = true;
+    displayRFIDAntennaGain();
   }
 
-  displayRFIDAntennaGain();
+  
 
   return retval;
 }
@@ -530,6 +537,7 @@ void togglePin(int pin, io_state &pin_state)
   } else if(pin_state == ON) {
     pin_state = OFF;
   }
+  digitalPinController(pin, pin_state);
 }
 
 bool laser_permission(String json_string)
