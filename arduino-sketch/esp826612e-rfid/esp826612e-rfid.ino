@@ -53,6 +53,7 @@ const int RELAY_PIN = 2;
 const int FRONT_PANEL_LED_PIN = 5;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
+const int RFID_antenna_gain = 4; // valid range: 0 to 7
 
 const char* ssid = "VV";
 const char* password = "LoopSoup";
@@ -91,6 +92,9 @@ void setup() {
     }
   SPI.begin(); // Init SPI bus
   mfrc522.PCD_Init(); // Init MFRC522 tag reader
+  if(!setRFIDAntennaGain(RFID_antenna_gain)){
+    rfid_error = ANTENNA_GAIN_ERROR;
+  }
   
   wifiConnectToAP(); // attempt to connect to the wifi network
 
@@ -104,6 +108,14 @@ void loop() {
 
   uint32_t tagid = 0;
   byte piccType = MFRC522::PICC_TYPE_UNKNOWN;
+
+  if(wifi_error != WIFI_OK) {
+    wifiErrorHandler();
+  }
+
+  if(rfid_error != RFID_OK) {
+    rfidErrorHandler();
+  }
 
   digitalPinController(RELAY_PIN, relay_state);
   digitalPinController(FRONT_PANEL_LED_PIN, front_panel_LED_state);
@@ -321,10 +333,91 @@ Receive response from server
     Serial.println(F("Disconnected from or not connected to server."));
     client.stop();
   //}
-
-  wifiErrorHandler();
-  rfidErrorHandler();
   
+}
+
+void displayRFIDAntennaGain()
+{
+  Serial.println();
+  Serial.print(F("RFID antenna gain: "));
+  int gain = 0 + (mfrc522.PCD_GetAntennaGain() >> 4);
+
+  switch (gain) {
+    case 0:
+      Serial.println(F("18dB"));
+      break;
+
+    case 1:
+      Serial.println(F("23dB"));
+      break;
+
+    case 2:
+      Serial.println(F("18dB"));
+      break;
+
+    case 3:
+      Serial.println(F("23dB"));
+      break;
+
+    case 4:
+      Serial.println(F("33dB"));
+      break;
+
+    case 5:
+      Serial.println(F("38dB"));
+      break;
+
+    case 6:
+      Serial.println(F("43dB"));
+      break;
+
+    case 7:
+      Serial.println(F("48dB"));
+      break;
+
+    default:
+      break;
+  }
+
+}
+
+bool setRFIDAntennaGain(int new_gain)
+{
+  // returns true on success
+  bool retval = false;
+
+/*
+ * Set the MFRC522 Receiver Gain (RxGain) to value specified by given mask.
+ * From 9.3.3.6 / table 98 in http://www.nxp.com/documents/data_sheet/MFRC522.pdf
+
+    000 18dB
+    001 23dB
+    010 18dB
+    011 23dB
+    100 33dB
+    101 38dB
+    110 43dB
+    111 48dB
+
+    gain is settable between 0 and 7 decimal
+    NOTE: Default value is 4
+
+   NOTE: Given mask is scrubbed with (0x07<<4)=01110000b as RCFfgReg may use reserved bits.
+*/
+  if(new_gain >= 0 && new_gain <= 7) {
+    byte RFID_antenna_gain = (byte) new_gain << 4;
+    mfrc522.PCD_SetAntennaGain(RFID_antenna_gain);
+    Serial.println();
+  }
+
+  byte current_gain = mfrc522.PCD_GetAntennaGain() >> 4;
+  if(current_gain == new_gain) {
+    retval = true;
+  }
+
+  displayRFIDAntennaGain();
+
+  return retval;
 }
 
 void wifiConnectToAP(void)
@@ -427,7 +520,7 @@ void togglePin(int pin, io_state &pin_state)
 {
   // debugging prints
   //Serial.println();
-  //Serial.print("pin state = ");
+  //Serial.print(F("pin state = "));
   //Serial.println(pin_state);
 
   // NOTE: only works if the IO pin is either ON or OFF!
@@ -507,7 +600,7 @@ void wifiErrorHandler(void)
       break;
 
     case JSON_PARSE_FAILED:
-      Serial.println("parseObject() failed");
+      Serial.println(F("parseObject() failed"));
       wifi_error = WIFI_OK;
       break;
 
@@ -524,6 +617,13 @@ void rfidErrorHandler(void)
         Serial.println(F("Ready and waiting for checkin taps!"));
       break;
 
+    case ANTENNA_GAIN_ERROR:
+      Serial.println(F("Setting RFID antenna gain failed.  Setting to default."));
+      if(setRFIDAntennaGain(4)) {
+        rfid_error = RFID_OK;
+      }
+      break;
+
     case TAG_READER_FAULTY:
       break;
 
@@ -537,5 +637,19 @@ void rfidErrorHandler(void)
       rfid_error = RFID_OK;
     default:
       break;
+  }
+}
+
+void printBinaryByte(byte data)
+{
+  for (byte mask = 0x80; mask; mask >>= 1) {
+    Serial.print(mask&data?'1':'0');
+  }
+}
+
+void printBinaryInt(int data)
+{
+  for (unsigned int mask = 0x8000; mask; mask >>= 1) {
+    Serial.print(mask&data?'1':'0');
   }
 }
