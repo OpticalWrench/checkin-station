@@ -55,19 +55,19 @@ const int FRONT_PANEL_LED_PIN = 5;
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 const int RFID_antenna_gain = 4; // valid range: 0 to 7
 
-const char* ssid = "VV";
-const char* password = "LoopSoup";
+const char* ssid = "SSID";
+const char* password = "Password";
 
-const char* host = "factur.monkeywrenchmanufacturing.com";  // use DNS to resolve IP address of server
-//const char* host = "192.168.1.118"; // do not use DNS to resolve IP address of server
+const char* host = "your.web.site";  // use DNS to resolve IP address of server
+//const char* host = "192.168.1.100"; // do not use DNS to resolve IP address of server
 const int server_port = 80; // http=80   https=443
 
 const unsigned long time_between_allowing_taps = 3000; // milliSeconds
 const unsigned long wifi_connect_timeout_mS = 10000; // milliSeconds
 const unsigned long server_response_timeout_mS = 3000; // milliSeconds
 
-String url = "/test/tap-in";
-String station_id = "n77JEHgJExMdZnGjNNGtanc8rvw6AsWd";
+String url = "/your/uri";
+String station_id = "a-long-unique-rfid-station-id-number";
 String token = "no-token";
 
 unsigned long tap_time = 0; // used to delay between tap-ins
