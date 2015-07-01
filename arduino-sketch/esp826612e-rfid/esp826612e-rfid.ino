@@ -607,6 +607,7 @@ void wifiErrorHandler(void)
       wifi_error = WIFI_OK;
       break;
 
+    case JSON_RECEIVE_FAILED:
       Serial.println(F("JSON Receive failed"));
       wifi_error = WIFI_OK;
       break;
