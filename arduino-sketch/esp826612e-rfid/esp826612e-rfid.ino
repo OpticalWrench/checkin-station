@@ -47,7 +47,7 @@ const int RST_PIN = 4;  // RFID-RC522A reset pin
 const int SS_PIN  = 15; // RFID-RC522A SPI slave (chip) select 
 
 // Relay pin assignment
-const int RELAY_PIN = 2;
+const int RELAY_PIN = 16;
 
 // LED pin assignment
 const int FRONT_PANEL_LED_PIN = 5;
@@ -604,6 +604,10 @@ void wifiErrorHandler(void)
       break;
     case SERVER_RESPONSE_TIMEOUT:
       Serial.println(F("Server timeout waiting for response."));
+      wifi_error = WIFI_OK;
+      break;
+
+      Serial.println(F("JSON Receive failed"));
       wifi_error = WIFI_OK;
       break;
 
